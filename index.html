@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinguaSync CAT Tool</title>
+  <link rel="icon" href="data:,">
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "mammoth": "https://esm.sh/mammoth@1.7.1",
+    "pdfjs-dist": "https://esm.sh/pdfjs-dist@4.4.168",
+    "pdfjs-dist/build/pdf.worker.mjs": "https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.mjs",
+    "pdfjs-dist/": "https://esm.sh/pdfjs-dist@^5.3.93/",
+    "docx": "https://esm.sh/docx@8.5.0",
+    "jspdf": "https://esm.sh/jspdf@2.5.1",
+    "jszip": "https://esm.sh/jszip@3.10.1",
+    "file-saver": "https://esm.sh/file-saver@2.0.5",
+    "@google/genai": "https://esm.sh/@google/genai",
+    "html2pdf.js": "https://esm.sh/html2pdf.js@0.10.1",
+    "marked": "https://esm.sh/marked@13.0.0"
+  }
+}
+</script>
+<style>
+  .structure-highlight {
+    position: relative;
+    cursor: help;
+    border-bottom: 1px dotted #ca8a04; /* amber-600 */
+    background-color: rgba(252, 211, 77, 0.2); /* amber-300 with 20% opacity */
+    padding: 0 2px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+  }
+
+  .structure-highlight:hover {
+    background-color: rgba(252, 211, 77, 0.4); /* amber-300 with 40% opacity on hover */
+  }
+
+  .date-highlight {
+    position: relative;
+    cursor: pointer;
+    border-bottom: 1px dotted #3b82f6; /* blue-500 */
+    background-color: rgba(147, 197, 253, 0.2); /* blue-300 with 20% opacity */
+    padding: 0 2px;
+    border-radius: 3px;
+    transition: background-color: 0.2s;
+  }
+  .date-highlight:hover {
+    background-color: rgba(147, 197, 253, 0.4); /* blue-300 with 40% opacity */
+  }
+
+  .target-error {
+    position: relative;
+    cursor: help;
+    text-decoration: underline wavy red;
+    text-decoration-thickness: from-font;
+    text-underline-offset: 2px;
+    background-color: rgba(254, 226, 226, 0.6); /* red-100 with 60% opacity */
+  }
+
+  .proofread-change {
+    color: #dc2626; /* red-600 */
+    font-weight: 500;
+  }
+  
+  [data-title]:hover::after {
+    content: attr(data-title);
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    z-index: 10;
+    background: #333;
+    color: #fff;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: sans-serif;
+    font-weight: 500;
+    margin-bottom: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  
+  [data-title]:hover::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    transform: translateX(-50%);
+    z-index: 11;
+    border: 5px solid transparent;
+    border-top-color: #333;
+    margin-bottom: -2px; /* Sits just under the tooltip box */
+  }
+
+  @keyframes fade-in-out {
+    0% {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+    10%, 90% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+  }
+
+  .animate-toast {
+    animation: fade-in-out 4s ease-in-out forwards;
+  }
+
+  @keyframes trend-indicator {
+    0% { opacity: 0; transform: translateY(5px); }
+    20%, 80% { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-5px); }
+  }
+  .animate-trend {
+    animation: trend-indicator 2.5s ease-in-out forwards;
+  }
+
+  .drag-ghost {
+    opacity: 0.4;
+    background-color: #e0e7ff; /* indigo-100 */
+  }
+
+  .timeline {
+    width: 100%;
+    height: 60px;
+    background-color: #f1f5f9; /* slate-100 */
+    border-radius: 6px;
+    position: relative;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .timeline-segment {
+    position: absolute;
+    height: 100%;
+    background-color: #a5b4fc; /* indigo-300 */
+    border-radius: 4px;
+    opacity: 0.7;
+    transition: background-color 0.2s;
+  }
+  .timeline-segment:hover {
+    background-color: #818cf8; /* indigo-400 */
+  }
+  .timeline-segment.active {
+    background-color: #6366f1; /* indigo-500 */
+    opacity: 1;
+  }
+  .playhead {
+    position: absolute;
+    width: 2px;
+    height: 100%;
+    background-color: #ef4444; /* red-500 */
+    pointer-events: none;
+  }
+  .cps-good { color: #22c55e; /* green-500 */ }
+  .cps-warn { color: #f97316; /* orange-500 */ }
+  .cps-bad { color: #ef4444; /* red-500 */ }
+</style>
+</head>
+<body class="bg-slate-100">
+  <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

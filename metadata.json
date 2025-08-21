@@ -1,0 +1,7 @@
+{
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "name": "LinguaSync - AI-Powered CAT Tool",
+  "description": ""
+}
