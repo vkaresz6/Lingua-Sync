@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useCatTool } from '../hooks/useCatTool';
 import { SegmentTable } from './SegmentTable';
@@ -17,7 +18,8 @@ import { BoundingBox } from './BoundingBox';
 import { ProjectState, PaneId, Term, Segment, QaIssue, SourceError, AiQaIssueType, Contributor, UserRole } from '../types';
 import * as gh from '../utils/githubApi';
 import { getGitHubAuth, clearGitHubAuth } from '../utils/projectManager';
-import { exportToDocx, exportToPdf, exportProjectFile, exportToSrt, parseTermDb, stripHtml, exportToHtml } from '../utils/fileHandlers';
+import { exportToDocx, exportToPdf, exportProjectFile, exportToSrt, stripHtml, exportToHtml } from '../utils/fileHandlers';
+import { parseTbx } from '../utils/xmlHandlers';
 import { AutoTranslateModal } from './AutoTranslateModal';
 import { STRINGS } from '../strings';
 import { GitHubConnectModal } from './GitHubConnectModal';
@@ -464,7 +466,7 @@ const EditorLayout: React.FC<EditorLayoutProps> = (props) => {
         }
 
         const { content } = await gh.getFileContent(auth.token, sc.owner, sc.repo, `terminology_databases/${fileName}`);
-        const termUnits = parseTermDb(content);
+        const termUnits = parseTbx(content);
 
         if (termUnits && termUnits.length > 0) {
             const newTerms: Term[] = termUnits.map((tu, i) => ({ ...tu, id: Date.now() + i }));

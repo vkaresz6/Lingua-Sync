@@ -3,6 +3,7 @@
 
 
 
+
 import React, { useState, useEffect } from 'react';
 import { ProjectState, GeminiPrompts, TermUnit, Term, Contributor, Segment, UserRole, TranslationUnit } from './types';
 import { ProjectListView } from './components/ProjectListView';
@@ -12,8 +13,9 @@ import { TimedTranscriptImportModal } from './components/TimedTranscriptImportMo
 import { WebpageImportModal } from './components/WebpageImportModal';
 import { getProjects, saveProject, deleteProject, getGitHubAuth } from './utils/projectManager';
 import { DEFAULT_PROMPTS, STRINGS } from './strings';
-import { loadProjectFile, parseDocxForProject, parsePdfToText, parseTermDb, exportTermDb, exportTranslationMemory, exportTmUnits, parseTimedTranscript, stripHtml, parseHtmlForProject } from './utils/fileHandlers';
+import { loadProjectFile, parseDocxForProject, parsePdfToText, exportTmxUnitsToFile, parseTimedTranscript, stripHtml, parseHtmlForProject } from './utils/fileHandlers';
 import { parseMqxlz } from './utils/importer';
+import { serializeTbx, serializeTmx, parseTbx } from './utils/xmlHandlers';
 import { segmentText as apiSegmentText, batchSegmentTimedText } from './utils/geminiApi';
 import * as gh from './utils/githubApi';
 import * as tmManager from './utils/tmManager';
@@ -122,7 +124,7 @@ const App: React.FC = () => {
                 throw new Error("No units found.");
             }
 
-            const tmContent = exportTmUnits(tmUnits);
+            const tmContent = serializeTmx(tmUnits, projectState.project.sourceLanguage, projectState.project.targetLanguage);
             const tmFileName = `${file.name.replace(/\.mqxlz$/, '')}.trmem`;
             const tmFilePath = `translation_memories/${tmFileName}`;
             
@@ -528,7 +530,7 @@ const App: React.FC = () => {
         }
         
         const termDbFilePath = `terminology_databases/${termDbFileName}`;
-        const termDbContent = exportTermDb(terms);
+        const termDbContent = serializeTbx(terms, state.project.sourceLanguage, state.project.targetLanguage);
 
         if (!termDbContent) {
             return termDbFileName; // No content to save
@@ -596,8 +598,8 @@ const App: React.FC = () => {
             }
     
             // 4. Create new content and commit
-            const newUnitsContent = exportTmUnits(newTUsToAppend);
-            const existingContent = exportTmUnits(remoteTUs);
+            const newUnitsContent = serializeTmx(newTUsToAppend, state.project.sourceLanguage, state.project.targetLanguage);
+            const existingContent = serializeTmx(remoteTUs, state.project.sourceLanguage, state.project.targetLanguage);
             const finalContent = existingContent ? `${existingContent}\n${newUnitsContent}` : newUnitsContent;
             
             await gh.commitFile(
@@ -856,7 +858,7 @@ const App: React.FC = () => {
                 const [source, target, definition] = line.split(',');
                 return { source: source?.trim(), target: target?.trim(), definition: definition?.trim() };
             }).filter(t => t.source && t.target);
-            content = exportTermDb(termUnits.map((tu, i) => ({...tu, id: i})));
+            content = serializeTbx(termUnits.map((tu, i) => ({...tu, id: i})), projectState.project.sourceLanguage, projectState.project.targetLanguage);
         } else {
             content = await file.text();
         }

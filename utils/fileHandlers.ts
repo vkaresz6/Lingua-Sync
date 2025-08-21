@@ -8,6 +8,7 @@ import { ProjectState, Segment, Term, TranslationUnit, TermUnit } from '../types
 import html2pdf from 'html2pdf.js';
 import { STRINGS } from '../strings';
 import { segmentText as apiSegmentText, getRebuiltDocumentXml, ApiResponse } from '../utils/geminiApi';
+import { serializeTmx } from './xmlHandlers';
 
 
 // Set worker source for pdf.js to work in a module environment
@@ -198,16 +199,6 @@ export const parseDocxForProject = async (
     return { sourceDocumentHtml, segments: newSegments };
 };
 
-
-export const parseTermDb = (jsonlText: string): TermUnit[] => {
-    if (!jsonlText.trim()) return [];
-    
-    return jsonlText
-        .split('\n')
-        .filter(line => line.trim())
-        .map(line => JSON.parse(line));
-};
-
 export const loadProjectFile = (file: File): Promise<ProjectState> => {
     return new Promise((resolve, reject) => {
         if (!file.name.endsWith('.lingua')) {
@@ -270,22 +261,6 @@ export const loadProjectFile = (file: File): Promise<ProjectState> => {
 
 // --- EXPORT FUNCTIONS ---
 
-const convertUnitsToJsonL = (units: TranslationUnit[] | TermUnit[]): string => {
-    if (units.length === 0) {
-        return '';
-    }
-    return units.map(unit => JSON.stringify(unit)).join('\n');
-}
-
-export const exportTermDb = (terms: Term[]): string => {
-    const termUnits: TermUnit[] = terms.map(({ source, target, definition }) => ({
-        source,
-        target,
-        ...(definition && { definition }),
-    }));
-    return convertUnitsToJsonL(termUnits);
-};
-
 export const exportProjectFile = (state: ProjectState, fileName: string): void => {
     const stateToSave = JSON.parse(JSON.stringify(state));
     // Don't save the full base64 source file inside the project file if we have the structured HTML.
@@ -297,24 +272,10 @@ export const exportProjectFile = (state: ProjectState, fileName: string): void =
     saveAs(blob, fileName);
 };
 
-export const exportTranslationMemory = (segments: Segment[]): string => {
-    const translationUnits = segments
-        .filter(segment => stripHtml(segment.target).trim() !== '')
-        .map(segment => ({
-            source: stripHtml(segment.source),
-            target: stripHtml(segment.target),
-        }));
-    return convertUnitsToJsonL(translationUnits);
-};
-
-export const exportTmUnits = (units: TranslationUnit[]): string => {
-    return convertUnitsToJsonL(units);
-};
-
-export const exportTmUnitsToFile = (units: TranslationUnit[], fileName: string): void => {
-    const content = exportTmUnits(units);
-    const blob = new Blob([content], { type: 'application/jsonl;charset=utf-8' });
-    saveAs(blob, fileName);
+export const exportTmxUnitsToFile = (units: TranslationUnit[], fileName: string, sourceLang: string, targetLang: string): void => {
+    const content = serializeTmx(units, sourceLang, targetLang);
+    const blob = new Blob([content], { type: 'application/xml;charset=utf-8' });
+    saveAs(blob, fileName.replace(/\.trmem$|\.tmx$/, '.tmx'));
 };
 
 export const getDocxXmlContent = async (base64Docx: string): Promise<string> => {
@@ -452,9 +413,6 @@ const parseNodeToRuns = async (node: Node, styles: any = {}): Promise<(TextRun |
                         if (imageType === 'svg\+xml') {
                             imageType = 'svg';
                         }
-                        if (imageType === 'jpeg') {
-                            imageType = 'jpg';
-                        }
             
                         const maxWidth = 450;
                         const finalWidth = Math.min(width, maxWidth);
@@ -484,7 +442,6 @@ const parseNodeToRuns = async (node: Node, styles: any = {}): Promise<(TextRun |
                             }));
                         } else {
                              runs.push(new ImageRun({
-                                type: imageType as 'jpg' | 'png' | 'gif' | 'bmp',
                                 data: base64ToUint8Array(base64Data),
                                 transformation: {
                                     width: finalWidth,

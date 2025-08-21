@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BoundingBox } from './BoundingBox';
 import * as gh from '../utils/githubApi';
@@ -7,7 +9,7 @@ import { getGitHubAuth } from '../utils/projectManager';
 import { STRINGS } from '../strings';
 import { ProjectState } from '../types';
 import * as tmManager from '../utils/tmManager';
-import { exportTmUnitsToFile } from '../utils/fileHandlers';
+import { exportTmxUnitsToFile } from '../utils/fileHandlers';
 
 interface ManageTmsModalProps {
     isOpen: boolean;
@@ -108,8 +110,8 @@ export const ManageTmsModal: React.FC<ManageTmsModalProps> = ({ isOpen, onClose,
                 alert("Local TM cache is empty. Nothing to export.");
                 return;
             }
-            const fileName = `linguasync_local_tm_export_${new Date().toISOString().split('T')[0]}.trmem`;
-            exportTmUnitsToFile(allUnits, fileName);
+            const fileName = `linguasync_local_tm_export_${new Date().toISOString().split('T')[0]}.tmx`;
+            exportTmxUnitsToFile(allUnits, fileName, projectState.project.sourceLanguage, projectState.project.targetLanguage);
         } catch(e) {
             alert("Failed to export local TM: " + (e instanceof Error ? e.message : 'Unknown error'));
         }

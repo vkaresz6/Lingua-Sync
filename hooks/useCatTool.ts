@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { ProjectState, Term, PaneLayout, PaneId, TranslationUnit, TermUnit, Segment, SegmentStatus } from '../types';
 import { stripHtml, parseDocxForProject, parsePdfToText, getDocxXmlContent, exportToDocxAdvanced, exportProjectFile, rebuildDocx } from '../utils/fileHandlers';
@@ -13,6 +10,7 @@ import { useDocumentData } from './useDocumentData';
 import { useApi } from './useApi';
 import { useSession } from '../components/contexts/SessionContext';
 import * as tmManager from '../utils/tmManager';
+import { parseTmx, parseTbx } from '../utils/xmlHandlers';
 
 
 // --- Helper function for Levenshtein distance ---
@@ -230,7 +228,7 @@ export const useCatTool = (initialState: ProjectState) => {
             for (const tmFileName of tmFiles) {
                 try {
                     const { content } = await gh.getFileContent(auth.token, sc.owner, sc.repo, `${tmFolderPath}/${tmFileName}`);
-                    const units = content.trim().split('\n').map(line => JSON.parse(line));
+                    const units = parseTmx(content);
                     allUnits.push(...units);
                 } catch (error) {
                     console.error(`Failed to load TM file: ${tmFileName}`, error);
@@ -266,7 +264,7 @@ export const useCatTool = (initialState: ProjectState) => {
             for (const dbFileName of dbFiles) {
                 try {
                     const { content } = await gh.getFileContent(auth.token, sc.owner, sc.repo, `${termDbFolderPath}/${dbFileName}`);
-                    const units: TermUnit[] = content.trim().split('\n').map(line => JSON.parse(line));
+                    const units: TermUnit[] = parseTbx(content);
                     const terms = units.map((unit, index) => ({...unit, id: Date.now() + index}));
                     allTerms.push(...terms);
                 } catch (error) {
@@ -651,102 +649,83 @@ export const useCatTool = (initialState: ProjectState) => {
         ));
     }, [setSegments]);
 
+    const approveSegment = useCallback((segmentId: number) => {
+        const segment = segments.find(s => s.id === segmentId);
+        if (!segment) return;
+        const currentUser = getGitHubAuth()?.login;
+        let newStatus: SegmentStatus = segment.status;
+        
+        const userRoles = initialState.project.contributors?.find(c => c.githubUsername === currentUser)?.roles || [];
+        
+        if (userRoles.includes('Proofreader 1') && (segment.status === 'translated' || segment.status === 'rejected')) {
+            newStatus = 'approved_by_p1';
+        } else if (userRoles.includes('Proofreader 2') && segment.status === 'approved_by_p1') {
+            newStatus = 'approved_by_p2';
+        } else if (userRoles.includes('Project Leader') || userRoles.includes('Owner')) {
+            if (segment.status === 'translated' || segment.status === 'rejected') newStatus = 'approved_by_p1';
+            if (segment.status === 'approved_by_p1') newStatus = 'approved_by_p2';
+        }
+    
+        if (newStatus !== segment.status) {
+            updateSegment(segmentId, { status: newStatus, isDirty: true, lastModifiedBy: currentUser });
+        }
+    }, [segments, initialState.project, updateSegment]);
+    
+    const rejectSegment = useCallback((segmentId: number, reason: string) => {
+        const currentUser = getGitHubAuth()?.login;
+        const segment = segments.find(s => s.id === segmentId);
+        if (!segment) return;
+        
+        updateSegment(segmentId, {
+            status: 'rejected',
+            isDirty: true,
+            lastModifiedBy: currentUser,
+            comments: [...(segment.comments || []), {
+                author: currentUser || 'Unknown',
+                text: `Rejected: ${reason}`,
+                createdAt: new Date().toISOString(),
+                isResolved: false
+            }]
+        });
+    }, [segments, updateSegment]);
+
     const finalizeAllSegments = useCallback(() => {
+        const currentUser = getGitHubAuth()?.login;
         setSegments(prev => prev.map(seg => {
             if (seg.status === 'approved_by_p1' || seg.status === 'approved_by_p2') {
-                return { ...seg, status: 'finalized', isDirty: true };
+                return { ...seg, status: 'finalized', isDirty: true, lastModifiedBy: currentUser };
             }
             return seg;
         }));
     }, [setSegments]);
 
-    const approveSegment = useCallback((segmentId: number) => {
-        const auth = getGitHubAuth();
-        const currentUser = auth?.login;
-        const { proofreader1, proofreader2 } = initialState.project;
-    
-        setSegments(prev => prev.map(seg => {
-            if (seg.id !== segmentId) return seg;
-    
-            let newStatus: SegmentStatus = seg.status;
-            let newTarget = seg.target;
-
-            const wasTranslated = seg.status === 'translated' || seg.status === 'rejected';
-            const wasApprovedByP1 = seg.status === 'approved_by_p1';
-
-            if (currentUser === proofreader1 && wasTranslated) {
-                newStatus = 'approved_by_p1';
-            } else if (currentUser === proofreader2 && wasApprovedByP1) {
-                newStatus = 'approved_by_p2';
-            }
-            
-            // Generate diff if status changed and there's a baseline translator target
-            if (newStatus !== seg.status && seg.translatorTarget) {
-                const oldText = stripHtml(seg.translatorTarget);
-                const newText = stripHtml(seg.target);
-                newTarget = generateDiffedHtml(oldText, newText);
-            }
-            
-            return { ...seg, status: newStatus, target: newTarget, isDirty: true, lastModifiedBy: currentUser };
-        }));
-    }, [setSegments, initialState.project]);
-    
-    const rejectSegment = useCallback((segmentId: number, reason: string) => {
-        const auth = getGitHubAuth();
-        const currentUser = auth?.login;
-        if (!currentUser) return;
-    
-        setSegments(prev => prev.map(seg => {
-            if (seg.id !== segmentId) return seg;
-    
-            const newComment = {
-                author: currentUser,
-                text: reason,
-                createdAt: new Date().toISOString(),
-                isResolved: false
-            };
-    
-            return { 
-                ...seg, 
-                status: 'rejected', 
-                comments: [...(seg.comments || []), newComment],
-                isDirty: true,
-                lastModifiedBy: currentUser
-            };
-        }));
-    }, [setSegments]);
-
     const prepareSegmentsForProofreading = useCallback(() => {
-        const currentUser = getGitHubAuth()?.login;
-        setSegments(prev => {
-            let changed = false;
-            const newSegments = prev.map(s => {
-                if (s.status === 'draft' && stripHtml(s.target).trim() !== '') {
-                    changed = true;
-                    return { ...s, status: 'translated' as SegmentStatus, isDirty: true, lastModifiedBy: currentUser };
-                }
-                return s;
-            });
-            return changed ? newSegments : prev;
-        });
+        setSegments(prev => prev.map(seg => {
+            if (seg.status === 'translated' && !seg.translatorTarget) {
+                return { ...seg, translatorTarget: seg.target };
+            }
+            return seg;
+        }));
     }, [setSegments]);
 
     return {
-        currentState,
         segments,
-        activeSegment,
-        isLoading,
-        translationStats,
         loadedTerms,
+        setLoadedTerms,
+        sourceDocumentHtml,
+        updateSegment,
+        updateSegmentTarget,
+        joinSegments,
+        splitSegmentInState,
+        addNewTerms,
+        updateWholeDocument,
         tmMatches,
         allTmMatches,
         isMatchingTm,
         segmentRefs,
         sourceSegmentRefs,
-        handleSegmentFocus,
         handleApplyTmMatch,
         handleFindAllTmMatches,
-        handleTranslateSelection,
         paneLayout,
         handleReorderSidebarPanes,
         handleDockPane,
@@ -765,20 +744,17 @@ export const useCatTool = (initialState: ProjectState) => {
         handleRebuildDocx,
         isExpExporting,
         handleExpExport,
-        updateSegment,
-        joinSegments,
-        splitSegmentInState,
-        addNewTerms,
-        updateSegmentTarget,
-        setLoadedTerms,
+        handleTranslateSelection,
+        translationStats,
+        currentState,
         videoCurrentTime,
         setVideoCurrentTime,
         videoDuration,
         setVideoDuration,
         updateSegmentTimes,
-        finalizeAllSegments,
         approveSegment,
         rejectSegment,
+        finalizeAllSegments,
         prepareSegmentsForProofreading,
     };
 };
